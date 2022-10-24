@@ -1,0 +1,75 @@
+with monthly_appt_data as(
+	select 
+		date_trunc('month', appointment_date)::date as report_date,
+		'monthly' as report_type,
+		appointment_type,
+		sum(appointments) as number_of_appointments,
+		sum(number_of_appointments) over (partition by report_date) as total_appointments
+from 
+	reporting_mart.appointments_by_state_by_status_by_day absbsbd 
+where 
+	appointment_status = 'completed'
+	and report_date >= dateadd('month', -10, current_date)
+group by 
+	report_date,
+	appointment_type
+order by
+	report_date desc,
+	appointment_type
+),
+weekly_appt_data as(
+		select 
+		date_trunc('week', appointment_date)::date as report_date,
+		'weekly' as report_type,
+		appointment_type,
+		sum(appointments) as number_of_appointments,
+		sum(number_of_appointments) over (partition by report_date) as total_appointments
+from 
+	reporting_mart.appointments_by_state_by_status_by_day absbsbd 
+where 
+	appointment_status = 'completed'
+	and report_date >= dateadd('week', -8, current_date)
+group by 
+	report_date,
+	appointment_type
+order by
+	report_date desc,
+	appointment_type
+),
+daily_appt_data as(
+		select 
+		appointment_date as report_date,
+		'daily' as report_type,
+		appointment_type,
+		sum(appointments) as number_of_appointments,
+		sum(number_of_appointments) over (partition by report_date) as total_appointments
+from 
+	reporting_mart.appointments_by_state_by_status_by_day absbsbd 
+where 
+	appointment_status = 'completed'
+	and report_date >= dateadd('day', -30, current_date)
+group by 
+	report_date,
+	appointment_type
+order by
+	report_date desc,
+	appointment_type
+),
+unioned_tables as(
+select *
+from monthly_appt_data
+union
+select *
+from weekly_appt_data
+union
+select *
+from daily_appt_data
+)
+select 
+	report_date,
+	appointment_type,
+	number_of_appointments,
+	total_appointments
+from unioned_tables
+where report_type = 'monthly'
+order by report_date desc
