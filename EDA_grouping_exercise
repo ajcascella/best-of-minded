@@ -1,0 +1,97 @@
+/* Explore a TABLE. Understand the grain. 
+Come up with different groupings, both single and multiple variable*/
+
+
+/* View table and get a sense of the breakdown*/
+SELECT *
+FROM minded_api_fivetran_minded_api.service_requests sr 
+LIMIT 100;
+
+/* SINGLE VARIABLE #1 */
+/* Sort by delivery_method*/
+SELECT 	sr.delivery_method AS delivery_method,
+	count(*) as total_service_requests
+FROM minded_api_fivetran_minded_api.service_requests sr 
+WHERE sr."_fivetran_active" = TRUE 
+GROUP BY delivery_method;
+
+/* SINGLE VARIABLE #2 */
+/* Sort by type */
+SELECT sr."type" AS sr_type,
+	count(*) as total_service_requests
+FROM minded_api_fivetran_minded_api.service_requests sr 
+WHERE sr."_fivetran_active" = TRUE 
+GROUP BY sr_type;
+
+/* SINGLE VARIABLE #3 */
+/* Sort by created_at date */
+SELECT date_trunc('DAY', sr.created_at) AS request_date,
+	count(*) as total_service_requests
+FROM minded_api_fivetran_minded_api.service_requests sr 
+WHERE sr."_fivetran_active" = TRUE 
+GROUP BY request_date
+order by request_date;
+
+/* SINGLE VARIABLE #4 */
+/* Sort by status */
+select sr.status as request_status,
+	count(*) as total_service_requests
+from minded_api_fivetran_minded_api.service_requests sr 
+where sr."_fivetran_active" = true 
+group by request_status;
+
+/* SINGLE VARIABLE #5 */
+/* Sort by user_id */
+select 	user_id as distinct_user,
+	count(*) as total_service_requests
+from minded_api_fivetran_minded_api.service_requests sr 
+where sr."_fivetran_active" = true 
+group by distinct_user;
+
+/* MULTIPLE VARIABLE #1 */
+/* Create weekly cohorts, show completed or active service requests only*/
+select date_trunc('week', sr.created_at) as weekly_cohort,
+	sr.status,
+	count(*) as service_requests_by_status,
+	sum(service_requests_by_status) over (partition by weekly_cohort) as total_active_service_requests
+from minded_api_fivetran_minded_api.service_requests sr 
+where sr.status not in ('REJECTED', 'CANCELLED')
+	 and sr."_fivetran_active" = true
+group by weekly_cohort,
+	sr.status
+order by weekly_cohort;
+
+/* MULTIPLE VARIABLE #2 */
+/* Create monthly cohort and determine how many total requests by user and averge number of requests per user */
+select date_trunc('month', sr.created_at) as monthly_cohort,
+	count(distinct user_id ) as total_users,
+	count(*) as total_service_requests,
+	total_service_requests/total_users:: numeric as average_requests_per_user
+from minded_api_fivetran_minded_api.service_requests sr
+where sr."_fivetran_active" = true 
+group by monthly_cohort
+order by monthly_cohort;
+
+/* MULTIPLE VARIABLE #3 */
+select date_trunc('month', sr.created_at) as monthly_cohort,
+	sr."type",
+	count(*) total_initial_service_requests,
+	sum(total_initial_service_requests) over (partition by monthly_cohort) as total_rejections
+from minded_api_fivetran_minded_api.service_requests sr 
+where "_fivetran_active" = true 
+	and sr."type" = 'STANDARD'
+group by monthly_cohort,
+	sr."type" 
+order by monthly_cohort;
+
+/* MULTIPLE VARIABLE #4 */
+select date_trunc('week', sr.created_at) as weekly_cohort,
+	sr.status,
+	count(*) as service_requests_by_status,
+	sum(service_requests_by_status) over (partition by weekly_cohort) as total_active_service_requests
+from minded_api_fivetran_minded_api.service_requests sr 
+where sr.status not in ('REJECTED', 'CANCELLED')
+	 and sr."_fivetran_active" = true
+group by weekly_cohort,
+	sr.status
+order by weekly_cohort;
