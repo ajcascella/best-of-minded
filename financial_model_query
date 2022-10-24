@@ -1,0 +1,134 @@
+with dates_i_care_about as (
+	select 
+		distinct report_date,
+		day_is_last_of_month,
+		day_is_last_of_week,
+		plan_name,
+			-- added members
+			sum(mcbpbd.added_total_members_daily) as added_members_daily,
+			sum(mcbpbd.added_total_members_wtd) as added_members_weekly,
+			sum(mcbpbd.added_total_members_mtd) as added_members_monthly,
+			-- rejected members 
+			sum(mcbpbd.rejected_members_daily) as rejected_members_daily_,
+			sum(mcbpbd.rejected_members_wtd) as rejected_members_weekly,
+			sum(mcbpbd.rejected_members_mtd) as rejected_members_monthly,
+			-- quick cancel members
+			sum(mcbpbd.quick_cancel_members_daily) as quick_cancel_members_daily_,
+			sum(mcbpbd.quick_cancel_members_wtd) as quick_cancel_members_weekly,
+			sum(mcbpbd.quick_cancel_members_mtd) as quick_cancel_members_monthly,
+			-- net new active
+			added_members_daily - (rejected_members_daily_ + quick_cancel_members_daily_) as net_new_active_daily,
+			added_members_weekly - (rejected_members_weekly + quick_cancel_members_weekly) as net_new_active_weekly,
+			added_members_monthly - (rejected_members_monthly + quick_cancel_members_monthly) as net_new_active_monthly,
+			-- standard cancel members
+			sum(mcbpbd.cancel_members_daily) as standard_cancel_members_daily,
+			sum(mcbpbd.cancel_members_wtd) as standard_cancel_members_weekly,
+			sum(mcbpbd.cancel_members_mtd) as standard_cancel_members_monthly,
+			-- new delinquent members
+			sum(new_delinquent_members_daily) as new_delinquent_members_daily_,
+			sum(new_delinquent_members_wtd) as new_delinquent_members_weekly,
+			sum(new_delinquent_members_mtd) as new_delinquent_members_monthly,
+			-- lost members 
+			rejected_members_daily_ + quick_cancel_members_daily_ + standard_cancel_members_daily + new_delinquent_members_daily_ as lost_members_daily,
+			rejected_members_weekly + quick_cancel_members_weekly + standard_cancel_members_weekly + new_delinquent_members_weekly as lost_members_weekly,
+			rejected_members_monthly + quick_cancel_members_monthly + standard_cancel_members_monthly + new_delinquent_members_monthly as lost_members_monthly,
+			-- net new members
+			net_new_active_daily - (standard_cancel_members_daily + new_delinquent_members_daily_) as net_new_members_daily,
+			net_new_active_weekly - (standard_cancel_members_weekly + new_delinquent_members_weekly) as net_new_members_weekly,
+			net_new_active_monthly - (standard_cancel_members_monthly + new_delinquent_members_monthly) as net_new_members_monthly,
+			-- total active members 
+			sum(active_members) as total_active_members,
+			-- total prescribed members 
+			sum(prescribed_members) as total_prescribed_members,
+		    -- total prescribed delinquent members 
+			sum(prescribed_delinquent_members) as total_prescribed_delinquent_members,
+			-- mrr
+			sum(mrr) as total_mrr
+	from reporting_mart.member_count_by_plan_by_day mcbpbd
+	where report_date >= current_date - 30
+		or (day_is_last_of_month and report_date >= dateadd('month', -10, current_date))
+		or (day_is_last_of_week and report_date >= dateadd('week', -8, current_date))
+		and plan_name in ('$30 / month', '$40 / month', '$65 / month')
+	group by report_date,
+		day_is_last_of_month,
+		day_is_last_of_week,
+		plan_name
+	order by report_date 		
+),
+date_unions as(
+	select 
+		*,
+		'daily' as report_type
+	from dates_i_care_about
+	where report_date >= current_date-30
+	union
+	select 
+		*,
+		'weekly' as report_type
+	from dates_i_care_about
+	where day_is_last_of_week  
+	union
+	select 
+		*,
+		'monthly' as report_type
+	from dates_i_care_about
+	where day_is_last_of_month
+	order by report_date
+)
+select 
+		case when report_type = 'monthly' then date_trunc('month',report_date)::date
+		    when report_type = 'weekly' then date_trunc('week', report_date)::date
+		    else report_date end as report_date,
+		report_type,
+		-- added members
+		sum(case when report_type = 'monthly' and added_members_monthly is not null then added_members_monthly
+			when report_type = 'weekly' and added_members_weekly is not null then added_members_weekly
+			when report_type = 'daily' and added_members_daily is not null then added_members_daily end) as added_members,
+		-- rejected members
+		sum(case when report_type = 'monthly' and rejected_members_monthly is not null then rejected_members_monthly
+			when report_type = 'weekly' and rejected_members_weekly is not null then rejected_members_weekly
+			when report_type = 'daily' and rejected_members_daily_ is not null then rejected_members_daily_ end) as rejected_members,
+		-- quick cancel members
+		sum(case when report_type = 'monthly' and quick_cancel_members_monthly is not null then quick_cancel_members_monthly
+			when report_type = 'weekly' and quick_cancel_members_weekly is not null then quick_cancel_members_weekly
+			when report_type = 'daily' and quick_cancel_members_daily_ is not null then quick_cancel_members_daily_ end) as quick_cancel_members,
+		-- new new active
+		sum(case when report_type = 'monthly' and net_new_active_monthly is not null then net_new_active_monthly
+			when report_type = 'weekly' and net_new_active_weekly is not null then net_new_active_weekly
+			when report_type = 'daily' and net_new_active_daily is not null then net_new_active_daily end) as net_new_active,
+		-- standard cancellations
+		sum(case when report_type = 'monthly' and standard_cancel_members_monthly is not null then standard_cancel_members_monthly
+			when report_type = 'weekly' and standard_cancel_members_weekly is not null then standard_cancel_members_weekly
+			when report_type = 'daily' and standard_cancel_members_daily is not null then standard_cancel_members_daily end) as standard_cancel_members,
+		-- new delinquent members	
+		sum(case when report_type = 'monthly' and new_delinquent_members_monthly is not null then new_delinquent_members_monthly
+			when report_type = 'weekly' and new_delinquent_members_weekly is not null then new_delinquent_members_weekly
+			when report_type = 'daily' and new_delinquent_members_daily_ is not null then new_delinquent_members_daily_ end) as new_delinquent_members,	
+		-- lost members 
+		sum(case when report_type = 'monthly' and lost_members_monthly is not null then lost_members_monthly
+			when report_type = 'weekly' and lost_members_weekly is not null then lost_members_weekly
+			when report_type = 'daily' and lost_members_daily is not null then lost_members_daily end) as lost_members,
+		-- net new members
+		sum(case when report_type = 'monthly' and net_new_members_monthly is not null then net_new_members_monthly
+			when report_type = 'weekly' and net_new_members_weekly is not null then net_new_members_weekly
+			when report_type = 'daily' and net_new_members_daily is not null then net_new_members_daily end) as net_new_members,	
+    	-- total active members
+		sum(case when total_active_members is not null then total_active_members else 0 end) as total_active_members_,
+    	-- total prescribed members
+        sum(case when total_prescribed_members is not null then total_prescribed_members else 0 end) as total_prescribed_members_,
+        -- prescribed share of active members
+        case when total_active_members_ = 0 then 0 else (total_prescribed_members_/total_active_members_::numeric*100) end as prescribed_share,
+    	-- total prescribed delinquent members
+        sum(case when total_prescribed_delinquent_members is not null then total_prescribed_delinquent_members else 0 end) as total_prescribed_delinquent_members,
+        -- total MRR 
+        sum(case when total_mrr is not null then total_mrr else 0 end) as MRR,
+        -- total cancellations 
+        quick_cancel_members + standard_cancel_members as total_cancellations,
+        -- rejection rate 
+        case when added_members = 0 then 0 else round(rejected_members/added_members::numeric * 100, 2)end as rejection_rate
+from date_unions
+where report_type = '{{ Report Type }}'
+    and plan_name in ({{Price Plan}})
+group by report_date,
+	report_type
+order by report_date desc
