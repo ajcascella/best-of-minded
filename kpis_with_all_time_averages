@@ -1,0 +1,40 @@
+select 
+	/* calculate mrr, total active members, and prescribed share of active members with current
+	 * day value and the all time average. don't include all time average for mrr.*/	
+    report_date,
+	sum(mrr) as total_mrr,
+	-- total active members
+    sum(active_members) as total_active_members,
+    avg(total_active_members) over (order by report_date rows between unbounded preceding and current row)
+    	as all_time_average_active_members,
+     -- prescribed share of active members
+    round(sum(prescribed_members)/total_active_members::numeric*100, 2) as prescribed_share,
+    avg(prescribed_share) over (order by report_date rows between unbounded preceding and current row)
+    	as all_time_average_prescribed_share,
+    /* calculate new added members, rejections, standard cancels, and quick cancels with current
+	 * daily figure and the 28 day average beneath it.
+	 * eventually add in appointments scheduled, appointments attended, and total rx created once
+	 * we have that data in reporting mart*/
+	-- added members
+    sum(added_total_members_daily) as total_added_members,
+    avg(total_added_members) over (order by report_date rows between 27 preceding and current row)
+    	as added_members_28day_average,
+    -- rejected members
+    sum(rejected_members_daily) as total_rejected_members,
+    avg(total_rejected_members) over (order by report_date rows between 27 preceding and current row)
+    	as rejected_members_28day_average,
+    -- standard cancels
+    sum(cancel_members_daily) as total_standard_canceled_members,
+    avg(total_standard_canceled_members) over (order by report_date rows between 27 preceding and current row)
+    	as standard_canceled_members_28day_average,
+    -- quick cancels
+    sum(quick_cancel_members_daily) as total_quick_canceled_members,
+    avg(total_quick_canceled_members) over (order by report_date rows between 27 preceding and current row)
+    	as quick_canceled_members_28day_average
+    -- appointments scheduled
+    -- appointments attended
+    -- rx created
+from reporting_mart.member_count_by_plan_by_day mcbpbd 
+where report_date between date_add('day', -365, current_date)::date and date_trunc('day', current_date)::date-1
+group by report_date
+order by report_date desc;
