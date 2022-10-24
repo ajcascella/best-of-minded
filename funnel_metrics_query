@@ -1,0 +1,73 @@
+with daily_funnel as (
+	select
+		*
+	from reporting_mart.funnel_by_day fbd 
+	/* fbd includes current date. including a where clause below to exclude current date in report */
+    where report_date between (current_date -30) and (current_date -1)
+	order by report_date desc
+),
+weekly_funnel as (
+	select
+		date_trunc('week', report_date)::date as weekly_report_date,
+		sum(spend) as weekly_spend,
+		sum(visitors) as weekly_visitors,
+		sum(starters) as weekly_starters,
+		sum(signups) as weekly_signups,
+		sum(checkouts) as weekly_checkouts,
+		weekly_spend/weekly_visitors as weekly_cpv,
+		weekly_spend/weekly_checkouts as weekly_cac
+	from reporting_mart.funnel_by_day fbd
+	where weekly_report_date between dateadd('week', -8, current_date)::date
+	    and date_trunc('week', current_date)::date -1
+    -- where report__date >= dateadd('week', -8, current_date)
+	-- where report_date between dateadd('week', -8, current_date)::date
+	    --and dateadd('week', -1, current_date)::date
+	group by weekly_report_date
+	order by weekly_report_date desc
+),
+monthly_funnel as (
+	select
+		date_trunc('month', report_date)::date as monthly_report_date,
+		sum(spend) as monthly_spend,
+		sum(visitors) as monthly_visitors,
+		sum(starters) as monthly_starters,
+		sum(signups) as monthly_signups,
+		sum(checkouts) as monthly_checkouts,
+		monthly_spend/monthly_visitors as monthly_cpv,
+		monthly_spend/monthly_checkouts as monthly_cac
+	from reporting_mart.funnel_by_day fbd
+	where monthly_report_date between dateadd('month', -10, current_date)::date and date_trunc('month', current_date)::date-1
+	--where report_date between dateadd('month', -6, current_date)
+	    --and dateadd('month', -1, current_date)
+	group by monthly_report_date
+	order by monthly_report_date desc
+),
+unioned_funnel_data as(
+	select *,
+		'daily' as report_type
+		from daily_funnel
+	union
+	select *,
+		'weekly' as report_type
+		from weekly_funnel
+	union
+	select *,
+		'monthly' as report_type
+		from monthly_funnel
+)
+select
+    report_date,
+	report_type,
+	sum(spend) as total_spend,
+	sum(visitors) as total_visitors,
+	sum(starters) as total_starters,
+	sum(signups) as total_signups,
+	sum(checkouts) as total_checkouts,
+	total_visitors/total_spend as cost_per_visitor,
+	total_spend/total_checkouts as customer_acquisition_cost
+from unioned_funnel_data
+--where report_type = 'daily'
+where report_type = '{{ Report Type }}'
+group by report_date,
+	report_type
+order by report_date desc
